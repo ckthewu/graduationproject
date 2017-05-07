@@ -2,17 +2,20 @@
 import jieba, os, json, word2vec
 from CONST import DICT, IDFDICT, W2VMODEL, KINDLIST, NEWSPATH, DATAPATH
 jieba.set_dictionary(DICT)
-stop_word = {}
-model = word2vec.load(W2VMODEL)
-add_array = [0 for x in range(100)]
+stop_word = {}# 停用词词典
+model = word2vec.load(W2VMODEL)# word2vec模型导入
+
+# 初始化停用词词典
 with open(IDFDICT, 'r') as f:
     for line in f.readlines():
         word, _, idf, c = line.rstrip('\n').split(" ")
         if float(idf) < 4:
             stop_word[word.decode("utf-8")] = 1
 
-
+# 构造词向量形式的文本矩阵
+# 这里只考虑了词量大于100的文本 并从中提取出100个词 信息足够分析
 def get_word_vector(filepath):
+    # 保存的格式为100*100的一个向量，方便存储。
     out_list = []
     word_count = 0
     with open(filepath, "r") as f:
@@ -21,6 +24,7 @@ def get_word_vector(filepath):
                 if word_count >= 100:
                     break
                 if not word in stop_word and word in model:
+                    # 获取这个词的词向量
                     out_list.extend(model[word].tolist())
                     word_count += 1
             if word_count >= 100:
@@ -30,6 +34,7 @@ def get_word_vector(filepath):
 
     return out_list
 
+# 写入数据
 def write_data():
     tranDataFile = open(DATAPATH + 'trandata_wv.json', 'w')
     tranLableFile = open(DATAPATH + 'tranlable_wv.json', 'w')
@@ -63,7 +68,6 @@ def write_data():
                     tranDataFile.write(json.dumps(v) + '\n')
                     tranLableFile.write(json.dumps(one_hot_array) + '\n')
                     trancount += 1
-            #tranArray.append({'x': numpy.asarray(getVector(NEWSPATH + kind + os.sep + name)), 'y': numpy.asarray(one_hot_array)})
     tranDataFile.close()
     tranLableFile.close()
     testDataFile1.close()

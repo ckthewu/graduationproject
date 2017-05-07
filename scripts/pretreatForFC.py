@@ -2,62 +2,56 @@
 import jieba, os, json
 from CONST import DICT, KINDLIST, NEWSPATH, IDFDICT, DATAPATH
 jieba.set_dictionary(DICT)
-count = 0
-dict = {}
-# with open('idf', 'r') as f:
-#     for index, line in enumerate(f.readlines()):
-#         l = line.rstrip("\n").split(" ")
-#         word, idf = l[0], l[1]
-#         dict[word.decode("utf-8")] = {"index": count, "idf": float(idf)}
-#         count += 1
-
+idf_dict = {}# 存储idf值的字典
+# 字典初始化
 with open(IDFDICT, 'r') as f:
     for line in f.readlines():
         word, _, idf, c = line.rstrip('\n').split(" ")
-        if len(word) < 10 and 4 < float(idf):
-            dict[word.decode("utf-8")] = {"index": count, "idf": float(idf)}
-            count += 1
-print count
+        # 提取出其中idf值小于四（停用词）的词， 存入字典
+        if 4 < float(idf):
+            idf_dict[word.decode("utf-8")] = {"index": len(idf_dict), "idf": float(idf)}
+dict_length = len(idf_dict)
+print dict_length
 
-
+# 获取文本向量
 def get_vector(filepath):
-    out_list = [{'count': 0, 'word': ''} for x in range(count)]
-    MAXSIZE = 10
-    word_count = 0
-    
+    # 初始化输出序列
+    out_list = [{'count': 0, 'word': ''} for x in range(dict_length)]
+    MAXPOOLSIZE = 10 # 降维使用的框大小
+    word_count = 0 # 文本总词数统计
+    # 统计词频
     with open(filepath, "r") as f:
         for l in f.readlines():
             for i in jieba.cut(l, cut_all=True):
                 word_count += 1
-                if i in dict:
-                    ind = int(dict[i]["index"])
+                if i in idf_dict:
+                    ind = int(idf_dict[i]["index"])
                     out_list[ind]['count'] += 1
                     out_list[ind]['word'] = i
-
+    # 计算tf-idf
     for index, d in enumerate(out_list):
-        if d['word'] in dict and dict[d['word']].has_key('idf'):
+        if d['word'] in idf_dict and idf_dict[d['word']].has_key('idf'):
             tf = d['count'] / float(word_count)
-            idf = dict[d['word']]['idf']
-
+            idf = idf_dict[d['word']]['idf']
             out_list[index] = tf*idf
         else:
             out_list[index] = 0
+    # 使用maxpooling的思想对向量降维
     newList = []
     i = 0
-    while i < count - MAXSIZE:
-        newList.append(reduce(max, out_list[i : i + MAXSIZE]))
-        i += MAXSIZE
-    
-    flag = True
+    while i < dict_length - MAXPOOLSIZE:
+        newList.append(reduce(max, out_list[i : i + MAXPOOLSIZE]))
+        i += MAXPOOLSIZE
+    # 判断向量是否全0（无效）
     for i in newList:
         if i != 0:
-            flag = False
-            break
-    if flag:
-        return 0
-    return newList
+            return newListe
+    return 0
 
+
+# 数据写入
 def write_data():
+    # 分别为训练集 测试集1 2
     tranDataFile = open(DATAPATH + 'trandata.json', 'w')
     tranLableFile = open(DATAPATH + 'tranlable.json', 'w')
     testDataFile1 = open(DATAPATH + 'testdata1.json', 'w')
@@ -90,7 +84,6 @@ def write_data():
                     tranDataFile.write(json.dumps(v) + '\n')
                     tranLableFile.write(json.dumps(oneHotArray) + '\n')
                     trancount += 1
-            #tranArray.append({'x': numpy.asarray(get_vector(NEWSPATH + kind + os.sep + name)), 'y': numpy.asarray(oneHotArray)})
     tranDataFile.close()
     tranLableFile.close()
     testDataFile1.close()

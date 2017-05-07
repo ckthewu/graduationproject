@@ -2,14 +2,18 @@
 import json, random
 from scripts.CONST import DATAPATH
 import tensorflow as tf
+
+# w矩阵初始化
 def weight_variable(shape, name = None):
   initial = tf.truncated_normal(shape, stddev=0.1)
   return tf.Variable(initial, name=name)
 
+# b向量初始化
 def bias_variable(shape, name = None):
   initial = tf.constant(0.1, shape=shape)
   return tf.Variable(initial, name=name)
 
+# 添加summaries
 def variable_summaries(var, name):
   """Attach a lot of summaries to a Tensor (for TensorBoard visualization)."""
   with tf.name_scope(name):
@@ -22,6 +26,7 @@ def variable_summaries(var, name):
     tf.summary.scalar('min', tf.reduce_min(var))
     tf.summary.histogram('histogram', var)
 
+# 获取随机batch
 def getBatch(xarr, yarr, size):
     indexarr = [x for x in range(len(xarr))]
     batchx = []
@@ -33,6 +38,11 @@ def getBatch(xarr, yarr, size):
     return (batchx, batchy)
 
 
+learning_rate = 5e-2;
+batch_size = 100;
+tran_times = 500
+
+# 数据集初始化
 tranDataArray = []
 tranLableArray = []
 testDataArray1 = []
@@ -77,53 +87,55 @@ with open(DATAPATH + 'testlable2.json', 'r') as f:
 
 L = len(testDataArray1[0])
 print L
+
+# 定义网络
+# 输入x 为一长度为L的文本向量， 答案y_real 为长度为5的one-hot向量
 x = tf.placeholder("float", [None, L])
-y_ = tf.placeholder("float", [None, 5], name='correct_output')
+y_real = tf.placeholder("float", [None, 5], name='correct_output')
 
 # 两个隐藏层 3000/1024个神经元全连接
-W1 = weight_variable([L, 3000])
-b1 = bias_variable([3000])
-y1 = tf.nn.softmax(tf.matmul(x, W1) + b1)
+W_fc1 = weight_variable([L, 3000])
+b_fc1 = bias_variable([3000])
+out_fc1 = tf.nn.softmax(tf.matmul(x, W_fc1) + b_fc1)
 
-W2 = weight_variable([3000, 1024])
-b2 = bias_variable([1024])
-y2 = tf.nn.softmax(tf.matmul(y1, W2) + b2)
+W_fc2 = weight_variable([3000, 1024])
+b_fc2 = bias_variable([1024])
+out_fc2 = tf.nn.softmax(tf.matmul(out_fc1, W_fc2) + b_fc2)
 
-W3 = weight_variable((1024, 5))
-b3 = bias_variable([5])
-y = tf.nn.softmax(tf.matmul(y2, W3) + b3, name='output')
-
-
-
-# 正确率变量
-acrate = tf.Variable(0.0, name='acrate')
+# 输出层 5个神经元
+W_ol = weight_variable((1024, 5))
+b_ol = bias_variable([5])
+y = tf.nn.softmax(tf.matmul(out_fc2, W_ol) + b_ol, name='output')
 
 
+#交叉熵loss函数
+cross_entropy = -tf.reduce_sum(y_real * tf.log(y), name='loss')
 
-#交叉熵cost函数
-cross_entropy = -tf.reduce_sum(y_ * tf.log(y), name='loss')
+# 定义训练的梯度下降算法 学习率 以及最小化的函数
+train_step = tf.train.AdamOptimizer(learning_rate).minimize(cross_entropy)
 
+# 定义正确率
+correct_prediction = tf.equal(tf.argmax(y, 1), tf.argmax(y_real, 1))
+accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"), name="accuracy")
+
+# 将loss和正确率加入summary
 variable_summaries(cross_entropy, 'loss')
-variable_summaries(acrate, 'acrate')
+variable_summaries(accuracy, 'accuracy')
 
-train_step = tf.train.AdamOptimizer(5e-2).minimize(cross_entropy)
-correct_prediction = tf.equal(tf.argmax(y, 1), tf.argmax(y_, 1))
-accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"))
-
+# 初始化变量等
 init = tf.global_variables_initializer()
 saver = tf.train.Saver()
 summary_op = tf.summary.merge_all()
 
 with tf.Session() as sess:
-
     summary_writer = tf.summary.FileWriter("/tmp/model_logs_fc2", sess.graph)
     sess.run(init)
-    Times = 500
-    for i in range(Times):
-        batch_xs, batch_ys = getBatch(tranDataArray, tranLableArray, 100)
-        sess.run([train_step, cross_entropy], feed_dict={x: batch_xs, y_: batch_ys})
-        if i % (Times/20) == 0:
-            summary, acc = sess.run([summary_op, accuracy], feed_dict={x: testDataArray1, y_: testLableArray1})
+
+    for i in range(tran_times):
+        batch_xs, batch_ys = getBatch(tranDataArray, tranLableArray, batch_size)
+        sess.run([train_step, cross_entropy], feed_dict={x: batch_xs, y_real: batch_ys})
+        if i % (tran_times/20) == 0:
+            summary, acc = sess.run([summary_op, accuracy], feed_dict={x: testDataArray1, y_real: testLableArray1})
             summary_writer.add_summary(summary, i)
             update = tf.assign(acrate, acc)
             sess.run(update)
@@ -131,9 +143,9 @@ with tf.Session() as sess:
 
 
     print '训练集正确率'
-    print sess.run(accuracy, feed_dict={x: tranDataArray, y_: tranLableArray})
+    print sess.run(accuracy, feed_dict={x: tranDataArray, y_real: tranLableArray})
     print '测试集正确率'
-    print sess.run(accuracy, feed_dict={x: testDataArray1, y_: testLableArray1})
-    print sess.run(accuracy, feed_dict={x: testDataArray2, y_: testLableArray2})
+    print sess.run(accuracy, feed_dict={x: testDataArray1, y_real: testLableArray1})
+    print sess.run(accuracy, feed_dict={x: testDataArray2, y_real: testLableArray2})
     save_path = saver.save(sess, "/tmp/model_fc2.ckpt")
-    print "Model saved in file: ", save_path
+    print "模型存储位置: ", save_path
