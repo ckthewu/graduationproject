@@ -6,14 +6,14 @@ import tensorflow as tf
 
 # 权值矩阵的初始化
 def weight_variable(shape, name=None):
-  initial = tf.truncated_normal(shape, stddev=0.1)
-  return tf.Variable(initial, name=name)
+    initial = tf.truncated_normal(shape, stddev=0.1)
+    return tf.Variable(initial, name=name)
 
 
 # 常数向量的初始化
 def bias_variable(shape, name = None):
-  initial = tf.constant(0.1, shape=shape)
-  return tf.Variable(initial, name=name)
+    initial = tf.constant(0.1, shape=shape)
+    return tf.Variable(initial, name=name)
 
 
 # 二维卷积
@@ -28,20 +28,19 @@ def max_pool_2x2(x, patchHeight):
 
 # 添加summaries
 def variable_summaries(var, name):
-  with tf.name_scope(name):
-    mean = tf.reduce_mean(var)
-    tf.summary.scalar('mean', mean)
-    with tf.name_scope('stddev'):
-      stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
-    tf.summary.scalar('stddev', stddev)
-    tf.summary.scalar('max', tf.reduce_max(var))
-    tf.summary.scalar('min', tf.reduce_min(var))
-    tf.summary.histogram('histogram', var)
+    with tf.name_scope(name):
+        mean = tf.reduce_mean(var)
+        tf.summary.scalar('mean', mean)
+        with tf.name_scope('stddev'):
+            stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
+        tf.summary.scalar('stddev', stddev)
+        tf.summary.scalar('max', tf.reduce_max(var))
+        tf.summary.scalar('min', tf.reduce_min(var))
+        tf.summary.histogram('histogram', var)
 
 
 # 获取随机的batch
 def get_batch(xarr, yarr, size):
-
     indexarr = [x for x in range(len(xarr))]
     batchx = []
     batchy = []
@@ -100,31 +99,25 @@ def dataInit():
 
     return (tranDataArray, tranLableArray, testDataArray1, testLableArray1, testDataArray2, testLableArray2)
 
-wvSize = 100
-sentenceSize = 100
-patchNum = 128
-batchSize = 200
-learningRate = 5e-1
-numSteps = 1000
-outSize = 5
-patchHeights = [2, 3, 4, 5]
-NEAR_0 = 1e-15
+wvSize = 100 # 词向量规模
+sentenceSize = 100 # 句子长度
+patchNum = 128 # 计算的特征个数
+batchSize = 200 # 每次输入训练的个数
+learningRate = 5e-1 # 初始学习率
+numSteps = 1000 # 训练次数
+outSize = 5 # 输出规模
+patchHeights = [2, 3, 4, 5] # 卷积窗口高度
+NEAR_0 = 1e-15 # 防止输出Nan的近0参数
 tranDataArray, tranLableArray, testDataArray1, testLableArray1, testDataArray2, testLableArray2 = dataInit()
 
+# 网络定义
+# 输入输出的占位符。 x 为二维向量 wvSize*sentenceSize
+x = tf.placeholder(tf.float32, shape=[None, sentenceSize*wvSize])
+x_image = tf.reshape(x, [-1, wvSize, sentenceSize, 1])
+y_real = tf.placeholder(tf.float32, shape=[None, outSize])
 
 
-
-
-
-acrate = tf.Variable(0.0, name='acrate')
-
-# 输入输出的占位符。 x 为二维向量 sentenceSize*wvSize
-x = tf.placeholder(tf.float32, shape=[None, 10000])
-x_image = tf.reshape(x, [-1, 100, 100, 1])
-y = tf.placeholder(tf.float32, shape=[None, outSize])
-
-
-## 卷积层
+## 构造三个并联的卷积层
 hPools = []
 for patchHeight in patchHeights:
     W = tf.Variable(tf.truncated_normal([patchHeight, wvSize, 1, patchNum], stddev=0.1))
@@ -152,10 +145,10 @@ l2_loss += tf.nn.l2_loss(b)
 scores = tf.nn.xw_plus_b(hDrop, W, b, name="scores")
 
 predictions = tf.argmax(scores, 1, name="predictions")
-losses = tf.nn.softmax_cross_entropy_with_logits(scores, y)
+losses = tf.nn.softmax_cross_entropy_with_logits(scores, y_real)
 loss = tf.reduce_mean(losses) + l2_reg_lambda * l2_loss
 
-correct_prediction = tf.equal(tf.argmax(scores,1), tf.argmax(y,1))
+correct_prediction = tf.equal(tf.argmax(scores,1), tf.argmax(y_real,1))
 accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"), name='accuracy')
 
 globalStep = tf.Variable(0)
@@ -163,9 +156,9 @@ learning_rate = tf.train.exponential_decay(learningRate, globalStep, numSteps, 0
 
 train_step = tf.train.AdagradOptimizer(learning_rate).minimize(loss,  global_step=globalStep)
 
-# cross_entropy = -tf.reduce_sum(y * tf.log(scores + NEAR_0), name='loss')
+# cross_entropy = -tf.reduce_sum(y_real * tf.log(scores + NEAR_0), name='loss')
 # train_step = tf.train.AdamOptimizer(learningRate).minimize(cross_entropy)
-# correct_prediction = tf.equal(tf.argmax(y, 1), tf.argmax(scores, 1))
+# correct_prediction = tf.equal(tf.argmax(y_real, 1), tf.argmax(scores, 1))
 # accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"), name='accuracy')
 
 #
@@ -185,17 +178,11 @@ with tf.Session() as sess:
     sess.run(init)
     for i in range(numSteps):
         batch_xs, batch_ys = get_batch(tranDataArray, tranLableArray, batchSize)
-        #sess.run([train_step, cross_entropy], feed_dict={x: batch_xs, y: batch_ys, keepProb: 1.0})
-        feed_dict = {x: batch_xs, y: batch_ys, keepProb: 0.5}
+        feed_dict = {x: batch_xs, y_real: batch_ys, keepProb: 0.5}
         _, step = sess.run([train_step, globalStep], feed_dict)
         if step % 50 == 0:
-            # summary, acc = sess.run([summary_op, accuracy], feed_dict={x: testDataArray, y: testLableArray, keepProb: 1.0})
-            # summary_writer.add_summary(summary, i)
-            # update = tf.assign(acrate, acc)
-            # sess.run(update)
-            # print('Accuracy at step %s: %s' % (i, acc))
             train_accuracy, summary = sess.run([accuracy, summary_op],
-                                               feed_dict={x: testDataArray1, y: testLableArray1, keepProb: 1.0})
+                                               feed_dict={x: testDataArray1, y_real: testLableArray1, keepProb: 1.0})
             summary_writer.add_summary(summary, step)
             current_step = tf.train.global_step(sess, globalStep)
             print "%s step %d, training accuracy %g" % \
@@ -204,8 +191,8 @@ with tf.Session() as sess:
 
 
     print '测试集1正确率'
-    print sess.run(accuracy, feed_dict={x: testDataArray1, y: testLableArray1, keepProb: 1.0})
+    print sess.run(accuracy, feed_dict={x: testDataArray1, y_real: testLableArray1, keepProb: 1.0})
     print '测试集2正确率'
-    print sess.run(accuracy, feed_dict={x: testDataArray2, y: testLableArray2, keepProb: 1.0})
+    print sess.run(accuracy, feed_dict={x: testDataArray2, y_real: testLableArray2, keepProb: 1.0})
     save_path = saver.save(sess, "/tmp/model_cnn.ckpt")
     print "Model saved in file: ", save_path
