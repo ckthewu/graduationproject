@@ -136,8 +136,6 @@ with tf.Session() as sess:
         if i % (tran_times/20) == 0:
             summary, acc = sess.run([summary_op, accuracy], feed_dict={x: testDataArray1, y_real: testLableArray1})
             summary_writer.add_summary(summary, i)
-            update = tf.assign(acrate, acc)
-            sess.run(update)
             print('Accuracy at step %s: %s' % (i, acc))
 
 

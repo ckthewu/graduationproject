@@ -21,8 +21,8 @@ def conv2d(x, W):
     return tf.nn.conv2d(x, W, strides=[1, 1, 1, 1], padding='VALID')
 
 
-# 使用2x2的max pool方法
-def max_pool_2x2(x, patchHeight):
+# 使用对整个向量的max pool方法
+def max_pool_all(x, patchHeight):
     return tf.nn.max_pool(x, ksize=[1, sentenceSize-patchHeight+1, 1, 1],strides=[1, 1, 1, 1], padding='VALID')
 
 
@@ -117,55 +117,56 @@ x_image = tf.reshape(x, [-1, wvSize, sentenceSize, 1])
 y_real = tf.placeholder(tf.float32, shape=[None, outSize])
 
 
-## 构造三个并联的卷积层
+## 构造多个并联的卷积层
 hPools = []
 for patchHeight in patchHeights:
-    W = tf.Variable(tf.truncated_normal([patchHeight, wvSize, 1, patchNum], stddev=0.1))
-    b = tf.Variable(tf.constant(0.1, shape=[patchNum]))
-    hConv = tf.nn.relu(conv2d(x_image, W) + b)
-    hPool = max_pool_2x2(hConv, patchHeight)
+    WConv = tf.Variable(tf.truncated_normal([patchHeight, wvSize, 1, patchNum], stddev=0.1))
+    bConv = tf.Variable(tf.constant(0.1, shape=[patchNum]))
+    hConv = tf.nn.relu(conv2d(x_image, WConv) + bConv)
+    hPool = max_pool_all(hConv, patchHeight)
     hPools.append(hPool)
 
-## 全连接层
-
+# 连接并联的卷积层结果
 patchNumAll = patchNum*len(patchHeights)
 hPool = tf.concat(3, hPools)
 hPoolFlat = tf.reshape(hPool, [-1, patchNumAll])
 
+# 设置drop比例
 keepProb = tf.placeholder(tf.float32)
 hDrop = tf.nn.dropout(hPoolFlat, keepProb)
 
-W = tf.Variable(tf.truncated_normal([patchNumAll, outSize], stddev=0.1))
-b = tf.Variable(tf.constant(0.1, shape=[outSize]))
+# 输出层
+W_ol = tf.Variable(tf.truncated_normal([patchNumAll, outSize], stddev=0.1))
+b_ol = tf.Variable(tf.constant(0.1, shape=[outSize]))
+y = tf.nn.xw_plus_b(hDrop, W_ol, b_ol)
 
+# l2正则化参数
 l2_reg_lambda=0.001
-l2_loss = tf.nn.l2_loss(W)
-l2_loss += tf.nn.l2_loss(b)
+l2_loss = tf.nn.l2_loss(W_ol)
+l2_loss += tf.nn.l2_loss(b_ol)
 
-scores = tf.nn.xw_plus_b(hDrop, W, b, name="scores")
 
-predictions = tf.argmax(scores, 1, name="predictions")
-losses = tf.nn.softmax_cross_entropy_with_logits(scores, y_real)
+# 定义loss与正确率
+predictions = tf.argmax(y, 1)
+losses = tf.nn.softmax_cross_entropy_with_logits(y, y_real)
 loss = tf.reduce_mean(losses) + l2_reg_lambda * l2_loss
 
-correct_prediction = tf.equal(tf.argmax(scores,1), tf.argmax(y_real,1))
+correct_prediction = tf.equal(tf.argmax(y, 1), tf.argmax(y_real, 1))
 accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"), name='accuracy')
 
 globalStep = tf.Variable(0)
-learning_rate = tf.train.exponential_decay(learningRate, globalStep, numSteps, 0.99, staircase=True)#学习率递减
+
+# 采用递减的学习率
+learning_rate = tf.train.exponential_decay(learningRate, globalStep, numSteps, 0.99, staircase=True)
 
 train_step = tf.train.AdagradOptimizer(learning_rate).minimize(loss,  global_step=globalStep)
 
-# cross_entropy = -tf.reduce_sum(y_real * tf.log(scores + NEAR_0), name='loss')
-# train_step = tf.train.AdamOptimizer(learningRate).minimize(cross_entropy)
-# correct_prediction = tf.equal(tf.argmax(y_real, 1), tf.argmax(scores, 1))
-# accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"), name='accuracy')
 
-#
+# 添加summary
 variable_summaries(loss, 'loss')
 variable_summaries(accuracy, 'accuracy')
 
-# important step
+# 初始化变量等
 init = tf.global_variables_initializer()
 saver = tf.train.Saver()
 summary_op = tf.summary.merge_all()
@@ -195,4 +196,4 @@ with tf.Session() as sess:
     print '测试集2正确率'
     print sess.run(accuracy, feed_dict={x: testDataArray2, y_real: testLableArray2, keepProb: 1.0})
     save_path = saver.save(sess, "/tmp/model_cnn.ckpt")
-    print "Model saved in file: ", save_path
+    print "模型存储位置: ", save_path
