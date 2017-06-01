@@ -1,6 +1,7 @@
-import os
-FATHERPATH = os.path.abspath(".")
+# coding: utf-8
+FATHERPATH = '/home/ckthewu/graduationproject'
 KINDLIST = ["tech", "culture", "sports", "mil", "fortune"]
+KINDMAP = {'tech': "教育", 'culture': "文化",'sports': "体育", 'mil': "军事", 'fortune': "经济"}
 DICT = FATHERPATH + "/vectorbase/dict.txt.small"
 IDFDICT = FATHERPATH + "/vectorbase/dict.txt"
 SOURCENEWSPATH = FATHERPATH + "/sohunews/sourcenews/"

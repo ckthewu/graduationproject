@@ -2,7 +2,7 @@
 import json, random, datetime
 from scripts.CONST import DATAPATH
 import tensorflow as tf
-
+from scripts.CONST import KINDLIST, KINDMAP, FATHERPATH
 
 # 权值矩阵的初始化
 def weight_variable(shape, name=None):
@@ -108,22 +108,36 @@ numSteps = 1000 # 训练次数
 outSize = 5 # 输出规模
 patchHeights = [2, 3, 4, 5] # 卷积窗口高度
 NEAR_0 = 1e-15 # 防止输出Nan的近0参数
+def getCategoryData(dataArray, lableArray):
+    categoryArray = [ [] for x in range(len(lableArray[0]))]
+    categoryLable = [ [] for x in range(len(lableArray[0]))]
+    if len(dataArray) != len(lableArray) or len(lableArray[0]) != outSize:
+        pass
+    else:
+        for i in range(len(lableArray)):
+            categoryArray[lableArray[i].index(1)].append(dataArray[i])
+            categoryLable[lableArray[i].index(1)].append(lableArray[i])
+    return (categoryArray, categoryLable)
+
+
 tranDataArray, tranLableArray, testDataArray1, testLableArray1, testDataArray2, testLableArray2 = dataInit()
+testCategoryData1, testCategoryLable1 = getCategoryData(testDataArray1, testLableArray1)
+testCategoryData2, testCategoryLable2  = getCategoryData(testDataArray2, testLableArray2)
 
 # 网络定义
-# 输入输出的占位符。 x 为二维向量 wvSize*sentenceSize
-x = tf.placeholder(tf.float32, shape=[None, sentenceSize*wvSize])
-x_image = tf.reshape(x, [-1, wvSize, sentenceSize, 1])
-y_real = tf.placeholder(tf.float32, shape=[None, outSize])
+# 输入输出的占位符。 x 为二维向量 sentenceSize*wvSize
+x = tf.placeholder(tf.float32, shape=[None, 10000])
+x_image = tf.reshape(x, [-1, 100, 100, 1])
+y = tf.placeholder(tf.float32, shape=[None, outSize])
 
 
-## 构造多个并联的卷积层
+# 构造多个并联的卷积层
 hPools = []
 for patchHeight in patchHeights:
-    WConv = tf.Variable(tf.truncated_normal([patchHeight, wvSize, 1, patchNum], stddev=0.1))
-    bConv = tf.Variable(tf.constant(0.1, shape=[patchNum]))
-    hConv = tf.nn.relu(conv2d(x_image, WConv) + bConv)
-    hPool = max_pool_all(hConv, patchHeight)
+    W = tf.Variable(tf.truncated_normal([patchHeight, wvSize, 1, patchNum], stddev=0.1))
+    b = tf.Variable(tf.constant(0.1, shape=[patchNum]))
+    hConv = tf.nn.relu(conv2d(x_image, W) + b)
+    hPool = max_pool_2x2(hConv, patchHeight)
     hPools.append(hPool)
 
 # 连接并联的卷积层结果
@@ -136,22 +150,22 @@ keepProb = tf.placeholder(tf.float32)
 hDrop = tf.nn.dropout(hPoolFlat, keepProb)
 
 # 输出层
-W_ol = tf.Variable(tf.truncated_normal([patchNumAll, outSize], stddev=0.1))
-b_ol = tf.Variable(tf.constant(0.1, shape=[outSize]))
-y = tf.nn.xw_plus_b(hDrop, W_ol, b_ol)
+W = tf.Variable(tf.truncated_normal([patchNumAll, outSize], stddev=0.1))
+b = tf.Variable(tf.constant(0.1, shape=[outSize]))
 
 # l2正则化参数
 l2_reg_lambda=0.001
-l2_loss = tf.nn.l2_loss(W_ol)
-l2_loss += tf.nn.l2_loss(b_ol)
+l2_loss = tf.nn.l2_loss(W)
+l2_loss += tf.nn.l2_loss(b)
 
+scores = tf.nn.xw_plus_b(hDrop, W, b, name="scores")
 
 # 定义loss与正确率
-predictions = tf.argmax(y, 1)
-losses = tf.nn.softmax_cross_entropy_with_logits(y, y_real)
+predictions = tf.argmax(scores, 1, name="predictions")
+losses = tf.nn.softmax_cross_entropy_with_logits(scores, y)
 loss = tf.reduce_mean(losses) + l2_reg_lambda * l2_loss
 
-correct_prediction = tf.equal(tf.argmax(y, 1), tf.argmax(y_real, 1))
+correct_prediction = tf.equal(tf.argmax(scores,1), tf.argmax(y,1))
 accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"), name='accuracy')
 
 globalStep = tf.Variable(0)
@@ -161,6 +175,10 @@ learning_rate = tf.train.exponential_decay(learningRate, globalStep, numSteps, 0
 
 train_step = tf.train.AdagradOptimizer(learning_rate).minimize(loss,  global_step=globalStep)
 
+# cross_entropy = -tf.reduce_sum(y * tf.log(scores + NEAR_0), name='loss')
+# train_step = tf.train.AdamOptimizer(learningRate).minimize(cross_entropy)
+# correct_prediction = tf.equal(tf.argmax(y, 1), tf.argmax(scores, 1))
+# accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"), name='accuracy')
 
 # 添加summary
 variable_summaries(loss, 'loss')
@@ -179,21 +197,39 @@ with tf.Session() as sess:
     sess.run(init)
     for i in range(numSteps):
         batch_xs, batch_ys = get_batch(tranDataArray, tranLableArray, batchSize)
-        feed_dict = {x: batch_xs, y_real: batch_ys, keepProb: 0.5}
+        feed_dict = {x: batch_xs, y: batch_ys, keepProb: 0.5}
         _, step = sess.run([train_step, globalStep], feed_dict)
         if step % 50 == 0:
             train_accuracy, summary = sess.run([accuracy, summary_op],
-                                               feed_dict={x: testDataArray1, y_real: testLableArray1, keepProb: 1.0})
+                                               feed_dict={x: testDataArray1, y: testLableArray1, keepProb: 1.0})
             summary_writer.add_summary(summary, step)
             current_step = tf.train.global_step(sess, globalStep)
             print "%s step %d, training accuracy %g" % \
                   (datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), current_step, train_accuracy)
 
 
-
+    line = ['cnn1', '测试集1',]
     print '测试集1正确率'
-    print sess.run(accuracy, feed_dict={x: testDataArray1, y_real: testLableArray1, keepProb: 1.0})
+    ac = str(sess.run(accuracy, feed_dict={x: testDataArray1, y: testLableArray1, keepProb: 1.0}))
+    line.append(ac)
+    print ac
+    for i in range(outSize):
+        ac = str(sess.run(accuracy, feed_dict={x: testCategoryData1[i], y: testCategoryLable1[i], keepProb: 1.0}))
+        line.append(ac)
+        print '%s类的正确率为%s' % (KINDMAP[KINDLIST[i]], str(ac))
+    with open(FATHERPATH + '/outtable.csv', 'a') as f:
+        f.write(','.join(line) + '\n')
+        line = ['cnn1', '测试集2',]
     print '测试集2正确率'
-    print sess.run(accuracy, feed_dict={x: testDataArray2, y_real: testLableArray2, keepProb: 1.0})
+    ac = str(sess.run(accuracy, feed_dict={x: testDataArray2, y: testLableArray2, keepProb: 1.0}))
+    line.append(ac)
+    print ac
+    for i in range(outSize):
+        ac = str(sess.run(accuracy, feed_dict={x: testCategoryData2[i], y: testCategoryLable2[i], keepProb: 1.0}))
+        line.append(ac)
+        print '%s类的正确率为%s' % (KINDMAP[KINDLIST[i]], str(ac))
+    with open(FATHERPATH + '/outtable.csv', 'a') as f:
+        f.write(','.join(line) + '\n')
+
     save_path = saver.save(sess, "/tmp/model_cnn.ckpt")
-    print "模型存储位置: ", save_path
+    print "模型存储于: ", save_path

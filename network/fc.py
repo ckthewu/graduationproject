@@ -1,7 +1,7 @@
 # coding: utf-8
 import json, random
 import tensorflow as tf
-from scripts.CONST import DATAPATH
+from scripts.CONST import DATAPATH, KINDMAP, KINDLIST, FATHERPATH
 def weight_variable(shape, name):
   initial = tf.truncated_normal(shape, stddev=0.1)
   return tf.Variable(initial, name=name)
@@ -31,7 +31,6 @@ def getBatch(xarr, yarr, size):
         batchx.append(xarr[index])
         batchy.append(yarr[index])
     return (batchx, batchy)
-dataType = raw_input()
 
 tranDataArray = []
 tranLableArray = []
@@ -74,6 +73,19 @@ with open(DATAPATH + 'testlable2.json', 'r') as f:
         testLableArray2.append(json.loads(l.rstrip("\n")))
     print 'ok'
     print "testlable 2 size " + str(len(testLableArray2))
+def getCategoryData(dataArray, lableArray):
+    categoryArray = [ [] for x in range(len(lableArray[0]))]
+    categoryLable = [ [] for x in range(len(lableArray[0]))]
+    if len(dataArray) != len(lableArray) or len(lableArray[0]) != 5:
+        pass
+    else:
+        for i in range(len(lableArray)):
+            categoryArray[lableArray[i].index(1)].append(dataArray[i])
+            categoryLable[lableArray[i].index(1)].append(lableArray[i])
+    return (categoryArray, categoryLable)
+testCategoryData1, testCategoryLable1 = getCategoryData(testDataArray1, testLableArray1)
+testCategoryData2, testCategoryLable2 = getCategoryData(testDataArray2, testLableArray2)
+
 
 L = len(testDataArray1[0])
 print L
@@ -118,10 +130,34 @@ with tf.Session() as sess:
             print('Accuracy at step %s: %s' % (i, acc))
 
 
+    # print '训练集正确率'
+    # print sess.run(accuracy, feed_dict={x: tranDataArray, y_: tranLableArray})
+    # print '测试集正确率'
+    # print sess.run(accuracy, feed_dict={x: testDataArray1, y_: testLableArray1})
+    # print sess.run(accuracy, feed_dict={x: testDataArray2, y_: testLableArray2})
+    line = ['fc', '测试集1',]
     print '训练集正确率'
     print sess.run(accuracy, feed_dict={x: tranDataArray, y_: tranLableArray})
-    print '测试集正确率'
-    print sess.run(accuracy, feed_dict={x: testDataArray1, y_: testLableArray1})
-    print sess.run(accuracy, feed_dict={x: testDataArray2, y_: testLableArray2})
+    print '测试集1正确率'
+    ac = str(sess.run(accuracy, feed_dict={x: testDataArray1, y_: testLableArray1}))
+    print ac
+    line.append(ac)
+    for i in range(5):
+        ac = str(sess.run(accuracy, feed_dict={x: testCategoryData1[i], y_: testCategoryLable1[i]}))
+        print '%s类的正确率为%s' % (KINDMAP[KINDLIST[i]], str(ac))
+        line.append(ac)
+    with open(FATHERPATH + '/outtable.csv', 'a') as f:
+        f.write(','.join(line) + '\n')
+        line = ['fc', '测试集2',]
+    print '测试集2正确率'
+    ac = str(sess.run(accuracy, feed_dict={x: testDataArray2, y_: testLableArray2}))
+    print ac
+    line.append(ac)
+    for i in range(5):
+        ac = str(sess.run(accuracy, feed_dict={x: testCategoryData2[i], y_: testCategoryLable2[i]}))
+        print '%s类的正确率为%s' % (KINDMAP[KINDLIST[i]], str(ac))
+        line.append(ac)
+    with open(FATHERPATH + '/outtable.csv', 'a') as f:
+        f.write(','.join(line) + '\n')
     # save_path = saver.save(sess, "/tmp/model.ckpt")
     # print "Model saved in file: ", save_path

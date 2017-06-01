@@ -45,7 +45,7 @@ def get_vector(filepath):
     # 判断向量是否全0（无效）
     for i in newList:
         if i != 0:
-            return newListe
+            return newList
     return 0
 
 
